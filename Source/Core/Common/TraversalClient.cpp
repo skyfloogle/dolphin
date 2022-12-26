@@ -12,8 +12,9 @@
 #include "Common/Random.h"
 #include "Core/NetPlayProto.h"
 
-TraversalClient::TraversalClient(ENetHost* netHost, const std::string& server, const u16 port)
-    : m_NetHost(netHost), m_Server(server), m_port(port)
+TraversalClient::TraversalClient(ENetHost* netHost, const std::string& server, const u16 port,
+                                 const u8 ttl)
+    : m_NetHost(netHost), m_Server(server), m_port(port), m_ttl(ttl)
 {
   netHost->intercept = TraversalClient::InterceptCallback;
 
@@ -173,7 +174,18 @@ void TraversalClient::HandleServerPacket(TraversalPacket* packet)
       ENetBuffer buf;
       buf.data = message;
       buf.dataLength = sizeof(message) - 1;
-      enet_socket_send(m_NetHost->socket, &addr, &buf, 1);
+      if (m_ttl != 0)
+      {
+        int oldttl;
+        enet_socket_get_option(m_NetHost->socket, ENET_SOCKOPT_TTL, &oldttl);
+        enet_socket_set_option(m_NetHost->socket, ENET_SOCKOPT_TTL, m_ttl);
+        enet_socket_send(m_NetHost->socket, &addr, &buf, 1);
+        enet_socket_set_option(m_NetHost->socket, ENET_SOCKOPT_TTL, oldttl);
+      }
+      else
+      {
+        enet_socket_send(m_NetHost->socket, &addr, &buf, 1);
+      }
     }
     else
     {
@@ -312,15 +324,17 @@ std::unique_ptr<ENetHost> g_MainNetHost;
 static std::string g_OldServer;
 static u16 g_OldServerPort;
 static u16 g_OldListenPort;
+static u8 g_OldTTL;
 
-bool EnsureTraversalClient(const std::string& server, u16 server_port, u16 listen_port)
+bool EnsureTraversalClient(const std::string& server, u16 server_port, u16 listen_port, u8 ttl)
 {
   if (!g_MainNetHost || !g_TraversalClient || server != g_OldServer ||
-      server_port != g_OldServerPort || listen_port != g_OldListenPort)
+      server_port != g_OldServerPort || listen_port != g_OldListenPort || ttl != g_OldTTL)
   {
     g_OldServer = server;
     g_OldServerPort = server_port;
     g_OldListenPort = listen_port;
+    g_OldTTL = ttl;
 
     ENetAddress addr = {ENET_HOST_ANY, listen_port};
     ENetHost* host = enet_host_create(&addr,                   // address
@@ -334,7 +348,7 @@ bool EnsureTraversalClient(const std::string& server, u16 server_port, u16 liste
       return false;
     }
     g_MainNetHost.reset(host);
-    g_TraversalClient.reset(new TraversalClient(g_MainNetHost.get(), server, server_port));
+    g_TraversalClient.reset(new TraversalClient(g_MainNetHost.get(), server, server_port, ttl));
   }
   return true;
 }

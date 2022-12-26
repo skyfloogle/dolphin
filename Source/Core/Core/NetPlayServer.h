@@ -42,7 +42,7 @@ public:
   void SendChunkedToClients(sf::Packet&& packet, PlayerId skip_pid = 0,
                             const std::string& title = "");
 
-  NetPlayServer(u16 port, bool forward_port, NetPlayUI* dialog,
+  NetPlayServer(u16 port, bool forward_port, const u8 ttl, NetPlayUI* dialog,
                 const NetTraversalConfig& traversal_config);
   ~NetPlayServer();
 

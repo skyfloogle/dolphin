@@ -1505,12 +1505,14 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
   const std::string traversal_host = Config::Get(Config::NETPLAY_TRAVERSAL_SERVER);
   const u16 traversal_port = Config::Get(Config::NETPLAY_TRAVERSAL_PORT);
 
+  const u8 ttl = Config::Get(Config::NETPLAY_ENABLE_TTL) ? Config::Get(Config::NETPLAY_TTL) : 0;
+
   if (is_traversal)
     host_port = Config::Get(Config::NETPLAY_LISTEN_PORT);
 
   // Create Server
   Settings::Instance().ResetNetPlayServer(new NetPlay::NetPlayServer(
-      host_port, use_upnp, m_netplay_dialog,
+      host_port, use_upnp, ttl, m_netplay_dialog,
       NetPlay::NetTraversalConfig{is_traversal, traversal_host, traversal_port}));
 
   if (!Settings::Instance().GetNetPlayServer()->is_connected)

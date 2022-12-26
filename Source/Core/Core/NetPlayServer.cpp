@@ -116,8 +116,8 @@ NetPlayServer::~NetPlayServer()
 }
 
 // called from ---GUI--- thread
-NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI* dialog,
-                             const NetTraversalConfig& traversal_config)
+NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, const u8 ttl,
+                             NetPlayUI* dialog, const NetTraversalConfig& traversal_config)
     : m_dialog(dialog)
 {
   //--use server time
@@ -133,7 +133,7 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
   if (traversal_config.use_traversal)
   {
     if (!EnsureTraversalClient(traversal_config.traversal_host, traversal_config.traversal_port,
-                               port))
+                               port, ttl))
       return;
 
     g_TraversalClient->m_Client = this;

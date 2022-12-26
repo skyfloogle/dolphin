@@ -47,6 +47,8 @@ NetPlaySetupDialog::NetPlaySetupDialog(const GameListModel& game_list_model, QWi
   int host_listen_port = Config::Get(Config::NETPLAY_LISTEN_PORT);
   bool enable_chunked_upload_limit = Config::Get(Config::NETPLAY_ENABLE_CHUNKED_UPLOAD_LIMIT);
   u32 chunked_upload_limit = Config::Get(Config::NETPLAY_CHUNKED_UPLOAD_LIMIT);
+  bool enable_ttl = Config::Get(Config::NETPLAY_ENABLE_TTL);
+  u8 ttl = Config::Get(Config::NETPLAY_TTL);
 #ifdef USE_UPNP
   bool use_upnp = Config::Get(Config::NETPLAY_USE_UPNP);
 
@@ -76,6 +78,10 @@ NetPlaySetupDialog::NetPlaySetupDialog(const GameListModel& game_list_model, QWi
   m_host_chunked_upload_limit_check->setChecked(enable_chunked_upload_limit);
   m_host_chunked_upload_limit_box->setValue(chunked_upload_limit);
   m_host_chunked_upload_limit_box->setEnabled(enable_chunked_upload_limit);
+
+  m_host_ttl_check->setChecked(enable_ttl);
+  m_host_ttl_box->setValue(ttl);
+  m_host_ttl_box->setEnabled(enable_ttl);
 
   OnConnectionTypeChanged(m_connection_type->currentIndex());
 
@@ -136,6 +142,8 @@ void NetPlaySetupDialog::CreateMainLayout()
   m_host_force_port_box = new QSpinBox;
   m_host_chunked_upload_limit_check = new QCheckBox(tr("Limit Chunked Upload Speed:"));
   m_host_chunked_upload_limit_box = new QSpinBox;
+  m_host_ttl_check = new QCheckBox(tr("Set Initial Packet TTL:"));
+  m_host_ttl_box = new QSpinBox;
   m_host_server_browser = new QCheckBox(tr("Show in server browser"));
   m_host_server_name = new QLineEdit;
   m_host_server_password = new QLineEdit;
@@ -152,6 +160,7 @@ void NetPlaySetupDialog::CreateMainLayout()
   m_host_chunked_upload_limit_box->setRange(1, 1000000);
   m_host_chunked_upload_limit_box->setSingleStep(100);
   m_host_chunked_upload_limit_box->setSuffix(QStringLiteral(" kbps"));
+  m_host_ttl_box->setRange(1, 255);
 
   m_host_chunked_upload_limit_check->setToolTip(tr(
       "This will limit the speed of chunked uploading per client, which is used for save sync."));
@@ -182,7 +191,9 @@ void NetPlaySetupDialog::CreateMainLayout()
   host_layout->addWidget(m_host_force_port_box, 3, 1, Qt::AlignLeft);
   host_layout->addWidget(m_host_chunked_upload_limit_check, 4, 0);
   host_layout->addWidget(m_host_chunked_upload_limit_box, 4, 1, Qt::AlignLeft);
-  host_layout->addWidget(m_host_button, 4, 3, 2, 1, Qt::AlignRight);
+  host_layout->addWidget(m_host_ttl_check, 5, 0);
+  host_layout->addWidget(m_host_ttl_box, 5, 1, Qt::AlignLeft);
+  host_layout->addWidget(m_host_button, 5, 3, 2, 1, Qt::AlignRight);
 
   host_widget->setLayout(host_layout);
 
@@ -232,6 +243,12 @@ void NetPlaySetupDialog::ConnectWidgets()
   });
   connect(m_host_chunked_upload_limit_box, qOverload<int>(&QSpinBox::valueChanged), this,
           &NetPlaySetupDialog::SaveSettings);
+  connect(m_host_ttl_check, &QCheckBox::toggled, this, [this](bool value) {
+    m_host_ttl_box->setEnabled(value);
+    SaveSettings();
+  });
+  connect(m_host_ttl_box, qOverload<int>(&QSpinBox::valueChanged), this,
+          &NetPlaySetupDialog::SaveSettings);
 
   connect(m_host_server_browser, &QCheckBox::toggled, this, &NetPlaySetupDialog::SaveSettings);
   connect(m_host_server_name, &QLineEdit::textChanged, this, &NetPlaySetupDialog::SaveSettings);
@@ -280,6 +297,9 @@ void NetPlaySetupDialog::SaveSettings()
   Config::SetBaseOrCurrent(Config::NETPLAY_CHUNKED_UPLOAD_LIMIT,
                            m_host_chunked_upload_limit_box->value());
 
+  Config::SetBaseOrCurrent(Config::NETPLAY_ENABLE_TTL, m_host_ttl_check->isChecked());
+  Config::SetBaseOrCurrent(Config::NETPLAY_TTL, static_cast<u8>(m_host_ttl_box->value()));
+
   Config::SetBaseOrCurrent(Config::NETPLAY_USE_INDEX, m_host_server_browser->isChecked());
   Config::SetBaseOrCurrent(Config::NETPLAY_INDEX_REGION,
                            m_host_server_region->currentData().toString().toStdString());
@@ -300,6 +320,9 @@ void NetPlaySetupDialog::OnConnectionTypeChanged(int index)
 #endif
   m_host_force_port_check->setHidden(index == 0);
   m_host_force_port_box->setHidden(index == 0);
+
+  m_host_ttl_check->setHidden(index == 0);
+  m_host_ttl_box->setHidden(index == 0);
 
   m_reset_traversal_button->setHidden(index == 0);
 

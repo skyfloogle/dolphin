@@ -40,7 +40,7 @@ public:
     SocketSendError,
     ResendTimeout,
   };
-  TraversalClient(ENetHost* netHost, const std::string& server, const u16 port);
+  TraversalClient(ENetHost* netHost, const std::string& server, const u16 port, const u8 ttl);
   ~TraversalClient();
 
   TraversalHostId GetHostID() const;
@@ -88,10 +88,12 @@ private:
   std::string m_Server;
   u16 m_port;
   u32 m_PingTime = 0;
+  u8 m_ttl = 0;
 };
 extern std::unique_ptr<TraversalClient> g_TraversalClient;
 // the NetHost connected to the TraversalClient.
 extern std::unique_ptr<ENetHost> g_MainNetHost;
 // Create g_TraversalClient and g_MainNetHost if necessary.
-bool EnsureTraversalClient(const std::string& server, u16 server_port, u16 listen_port = 0);
+bool EnsureTraversalClient(const std::string& server, u16 server_port, u16 listen_port = 0,
+                           u8 ttl = 0);
 void ReleaseTraversalClient();
