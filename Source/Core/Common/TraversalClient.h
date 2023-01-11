@@ -40,7 +40,7 @@ public:
     SocketSendError,
     ResendTimeout,
   };
-  TraversalClient(ENetHost* netHost, const std::string& server, const u16 port);
+  TraversalClient(ENetHost* netHost, const std::string& server, const u16 port, const u16 port_alt = 0);
   ~TraversalClient();
 
   TraversalHostId GetHostID() const;
@@ -73,6 +73,8 @@ private:
   void ResendPacket(OutgoingTraversalPacketInfo* info);
   TraversalRequestId SendTraversalPacket(const TraversalPacket& packet);
   void OnFailure(FailureReason reason);
+  void NewPrimeTest();
+  void HandlePrimeTest();
   void HandlePing();
   static int ENET_CALLBACK InterceptCallback(ENetHost* host, ENetEvent* event);
 
@@ -88,10 +90,19 @@ private:
   std::string m_Server;
   u16 m_port;
   u32 m_PingTime = 0;
+
+  ENetHost* m_TestHost = nullptr;
+  std::list<OutgoingTraversalPacketInfo> m_OutgoingTestPackets;
+  u32 m_TestAckTime = 0;
+  TraversalRequestId m_PrimeId = 0;
+  TraversalRequestId m_AlternateId = 0;
+  u16 m_portAlt;
+  u8 m_ttl = 1;
+  bool m_ttl_ready = false;
 };
 extern std::unique_ptr<TraversalClient> g_TraversalClient;
 // the NetHost connected to the TraversalClient.
 extern std::unique_ptr<ENetHost> g_MainNetHost;
 // Create g_TraversalClient and g_MainNetHost if necessary.
-bool EnsureTraversalClient(const std::string& server, u16 server_port, u16 listen_port = 0);
+bool EnsureTraversalClient(const std::string& server, u16 server_port, u16 server_port_alt = 0, u16 listen_port = 0);
 void ReleaseTraversalClient();

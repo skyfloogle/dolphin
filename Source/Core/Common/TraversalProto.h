@@ -29,6 +29,12 @@ enum class TraversalPacketType : u8
   ConnectReady = 6,
   // [s->c] Alternately, the server might not have heard of this host.
   ConnectFailed = 7,
+  // [c->s] The client primes its NAT. This packet should not arrive at the server.
+  NatPrime = 8,
+  // [c->s] To test NAT priming, ask server to reply via its alternate port.
+  PleaseReplyAlternate = 9,
+  // [s->c] If the alternate reply arrives, traversal is possible.
+  AlternateReply = 10,
 };
 
 constexpr u8 TraversalProtoVersion = 0;

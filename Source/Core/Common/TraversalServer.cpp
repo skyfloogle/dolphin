@@ -9,6 +9,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <thread>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -26,6 +27,7 @@
 #define DEBUG 0
 #define NUMBER_OF_TRIES 5
 #define PORT 6262
+#define PORT_ALT 6263
 
 static u64 currentTime;
 
@@ -115,6 +117,7 @@ struct hash<TraversalHostId>
 }  // namespace std
 
 static int sock;
+static int sockAlt;
 static std::unordered_map<TraversalRequestId, OutgoingPacketInfo> outgoingPackets;
 static std::unordered_map<TraversalHostId, EvictEntry<TraversalInetAddress>> connectedClients;
 
@@ -182,14 +185,14 @@ static const char* SenderName(sockaddr_in6* addr)
   return buf;
 }
 
-static void TrySend(const void* buffer, size_t size, sockaddr_in6* addr)
+static void TrySend(const void* buffer, size_t size, sockaddr_in6* addr, bool alt)
 {
 #if DEBUG
   const auto* packet = static_cast<const TraversalPacket*>(buffer);
   printf("-> %d %llu %s\n", static_cast<int>(packet->type),
          static_cast<long long>(packet->requestId), SenderName(addr));
 #endif
-  if ((size_t)sendto(sock, buffer, size, 0, (sockaddr*)addr, sizeof(*addr)) != size)
+  if ((size_t)sendto(alt ? sockAlt : sock, buffer, size, 0, (sockaddr*)addr, sizeof(*addr)) != size)
   {
     perror("sendto");
   }
@@ -214,7 +217,7 @@ static void SendPacket(OutgoingPacketInfo* info)
 {
   info->tries++;
   info->sendTime = currentTime;
-  TrySend(&info->packet, sizeof(info->packet), &info->dest);
+  TrySend(&info->packet, sizeof(info->packet), &info->dest, false);
 }
 
 static void ResendPackets()
@@ -344,6 +347,14 @@ static void HandlePacket(TraversalPacket* packet, sockaddr_in6* addr)
     }
     break;
   }
+  case TraversalPacketType::PleaseReplyAlternate:
+  {
+    TraversalPacket reply = {};
+    reply.type = TraversalPacketType::AlternateReply;
+    reply.requestId = packet->requestId;
+    TrySend(&reply, sizeof(reply), addr, true);
+    break;
+  }
   default:
     fprintf(stderr, "received unknown packet type %d from %s\n", static_cast<int>(packet->type),
             SenderName(addr));
@@ -355,7 +366,53 @@ static void HandlePacket(TraversalPacket* packet, sockaddr_in6* addr)
     ack.type = TraversalPacketType::Ack;
     ack.requestId = packet->requestId;
     ack.ack.ok = packetOk;
-    TrySend(&ack, sizeof(ack), addr);
+    TrySend(&ack, sizeof(ack), addr, false);
+  }
+}
+
+static void AlternateThreadFunc()
+{
+  int rv;
+  while (true)
+  {
+    sockaddr_in6 raddr;
+    socklen_t addrLen = sizeof(raddr);
+    TraversalPacket packet;
+    // note: switch to recvmmsg (yes, mmsg) if this becomes
+    // expensive
+    rv = recvfrom(sockAlt, &packet, sizeof(packet), 0, (sockaddr*)&raddr, &addrLen);
+    currentTime = std::chrono::duration_cast<std::chrono::microseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
+    if (rv < 0)
+    {
+      if (errno != EINTR && errno != EAGAIN)
+      {
+        perror("recvfrom alt");
+        exit(1);
+      }
+    }
+    else if ((size_t)rv < sizeof(packet))
+    {
+      fprintf(stderr, "received short packet on alt socket from %s\n", SenderName(&raddr));
+    }
+    else
+    {
+#if DEBUG
+      printf("alt <- %d %llu %s\n", static_cast<int>(packet.type),
+             static_cast<long long>(packet.requestId), SenderName(&raddr));
+#endif
+      if (packet.type != TraversalPacketType::NatPrime)
+      {
+        fprintf(stderr, "alt socket received unknown packet type %d from %s\n", static_cast<int>(packet.type),
+                SenderName(&raddr));
+      }
+      TraversalPacket ack = {};
+      ack.type = TraversalPacketType::Ack;
+      ack.requestId = packet.requestId;
+      ack.ack.ok = true;
+      TrySend(&ack, sizeof(ack), &raddr, true);
+    }
   }
 }
 
@@ -368,11 +425,23 @@ int main()
     perror("socket");
     return 1;
   }
+  sockAlt = socket(PF_INET6, SOCK_DGRAM, 0);
+  if (sockAlt == -1)
+  {
+    perror("socket alt");
+    return 1;
+  }
   int no = 0;
   rv = setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &no, sizeof(no));
   if (rv < 0)
   {
     perror("setsockopt IPV6_V6ONLY");
+    return 1;
+  }
+  rv = setsockopt(sockAlt, IPPROTO_IPV6, IPV6_V6ONLY, &no, sizeof(no));
+  if (rv < 0)
+  {
+    perror("setsockopt IPV6_V6ONLY alt");
     return 1;
   }
   in6_addr any = IN6ADDR_ANY_INIT;
@@ -392,6 +461,13 @@ int main()
     perror("bind");
     return 1;
   }
+  addr.sin6_port = htons(PORT_ALT);
+  rv = bind(sockAlt, (sockaddr*)&addr, sizeof(addr));
+  if (rv < 0)
+  {
+    perror("bind alt");
+    return 1;
+  }
 
   timeval tv;
   tv.tv_sec = 0;
@@ -404,8 +480,10 @@ int main()
   }
 
 #ifdef HAVE_LIBSYSTEMD
-  sd_notifyf(0, "READY=1\nSTATUS=Listening on port %d", PORT);
+  sd_notifyf(0, "READY=1\nSTATUS=Listening on port %d (alt port: %d)", PORT, PORT_ALT);
 #endif
+
+  std::thread altThread(&AlternateThreadFunc);
 
   while (true)
   {
